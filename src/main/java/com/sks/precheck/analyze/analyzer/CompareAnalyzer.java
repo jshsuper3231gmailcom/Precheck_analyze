@@ -20,7 +20,8 @@ public class CompareAnalyzer implements LogAnalyzer {
     @Override
     public AnalyzeResult analyze(CollectLog log, AnalyzePolicy policy) {
         if (!"ComparePolicy".equals(policy.getClass().getSimpleName())) {
-            throw new AnalyzeException("비교형 정책이 아니다: " + policy);
+            throw new AnalyzeException("비교형 정책이 아니다 - serverId: " + log.getServerId() + ", logId: " + log.getLogId()
+                    + ", 수집로그타입: " + log.getLogType() + ", 정책타입: " + policy.getLogType() + "(" + policy.getClass().getSimpleName() + ")");
         }
 
         String contentWithTokens = extractContentWithTokens(log);

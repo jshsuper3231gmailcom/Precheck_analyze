@@ -22,7 +22,8 @@ public class PhraseAnalyzer implements LogAnalyzer {
     @Override
     public AnalyzeResult analyze(CollectLog collectLog, AnalyzePolicy policy) {
         if (!(policy instanceof PhrasePolicy)) {
-            throw new AnalyzeException("문구형 정책이 아니다: " + policy);
+            throw new AnalyzeException("문구형 정책이 아니다 - serverId: " + collectLog.getServerId() + ", logId: " + collectLog.getLogId()
+                    + ", 수집로그타입: " + collectLog.getLogType() + ", 정책타입: " + policy.getLogType() + "(" + policy.getClass().getSimpleName() + ")");
         }
 
         PhrasePolicy phrasePolicy = (PhrasePolicy) policy;

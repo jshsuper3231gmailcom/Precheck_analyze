@@ -17,7 +17,8 @@ public class InfoAnalyzer implements LogAnalyzer {
     @Override
     public AnalyzeResult analyze(CollectLog log, AnalyzePolicy policy) {
         if (!(policy instanceof InfoPolicy)) {
-            throw new AnalyzeException("정보형 정책이 아니다: " + policy);
+            throw new AnalyzeException("정보형 정책이 아니다 - serverId: " + log.getServerId() + ", logId: " + log.getLogId()
+                    + ", 수집로그타입: " + log.getLogType() + ", 정책타입: " + policy.getLogType() + "(" + policy.getClass().getSimpleName() + ")");
         }
 
         AnalyzeResult result = baseResult(log);

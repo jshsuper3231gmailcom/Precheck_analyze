@@ -31,7 +31,8 @@ public class NumericAnalyzer implements LogAnalyzer {
     @Override
     public AnalyzeResult analyze(CollectLog log, AnalyzePolicy policy) {
         if (!(policy instanceof NumericPolicy)) {
-            throw new AnalyzeException("수치형 정책이 아니다: " + policy);
+            throw new AnalyzeException("수치형 정책이 아니다 - serverId: " + log.getServerId() + ", logId: " + log.getLogId()
+                    + ", 수집로그타입: " + log.getLogType() + ", 정책타입: " + policy.getLogType() + "(" + policy.getClass().getSimpleName() + ")");
         }
 
         NumericPolicy numericPolicy = (NumericPolicy) policy;
