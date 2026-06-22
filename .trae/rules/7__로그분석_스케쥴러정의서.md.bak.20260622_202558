@@ -216,17 +216,3 @@ dlprem01-테스트개발               dlprem01-테스트개발
 | 주기 기준 | 마지막으로 읽은 파일 라인번호 | 마지막으로 분석한 COLLECT_LOG_ID |
 | 중복 방지 수단 | TB_COLLECT_HISTORY.LAST_LINE_NUMBER | TB_ANALYZE_HISTORY.LAST_ANALYZE_LOG_ID |
 | 재시도 정책 | 명세서 기준 동일 | 명세서 기준 동일 |
-
----
-
-## logdatagen 스킬 연동 현황
-
-- `PreCheck_AnalyzeLogs_Schedule.conf`에서 Dashboard 7개 대상서버(`application.yml`의
-  `precheck.info-data` 기준)가 6개는 주석(skip) 처리, 1개(ddfep01-해외시세)는 등록 자체가
-  누락되어 있었음 — `logdatagen` 스킬이 생성하는 `~/test_log` 데이터를 분석서버가 전혀
-  처리하지 못하는 상태였던 것을 발견하고 전부 활성화 + 신규 등록함 (2026-06-22)
-- 요일도 `1-5`(평일)에서 `*`(매일)로 변경 — 테스트 로그 생성일이 주말이어도 분석이 돌아야
-  히스토리로그의 주말 규칙(종목수=0, 접속자수=평일의 10%)이 실제 분석 결과로 반영됨
-- `dcoodb01-주문체결`은 Dashboard 고정항목 서버가 아니므로 logdatagen 범위 밖, 기존 `1-5`
-  설정 그대로 유지
-- logdatagen 스킬이 이 conf를 다시 수정할 경우 이 섹션도 함께 갱신할 것

@@ -1540,3 +1540,57 @@
 2026-06-16 16:28:36.778 [analyze-async-1] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9445, serverId: dcoodb01-주문체결, date: 20260616
 2026-06-16 16:28:36.780 [analyze-async-1] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
 2026-06-16 16:28:37.862 [main] INFO  UserCountSpikeMockTest - [41/60] 2026-06-16T16:28:37.860504700 → HTS:1939, MTS:0, TOTAL:1939
+2026-06-16 16:29:02.745 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:02.745 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:02.745 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 시작 - filePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
+2026-06-16 16:29:02.746 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 완료 - absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, 유효 스케줄 건수: 1
+2026-06-16 16:29:02.747 [scheduling-1] INFO  AnalyzeScheduleParser -   [1] serverId: dcoodb01-주문체결, sourceFilePath: null, type: 주기, day: 1-5, start: 000501, interval: 1, end: 230501
+2026-06-16 16:29:02.747 [scheduling-1] INFO  AnalyzeScheduler - [[[주기 분석 실행 결정]]] - serverId: dcoodb01-주문체결, file: null, 간격: 1분, 985번째 실행, day: 1-5, start: 000501, end: 230501
+2026-06-16 16:29:02.753 [analyze-async-1] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9446, serverId: dcoodb01-주문체결, date: 20260616
+2026-06-16 16:29:02.756 [analyze-async-1] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
+2026-06-16 16:29:03.553 [main] INFO  UserCountSpikeMockTest - [21/60] 2026-06-16T16:29:03.550136300 → HTS:883, MTS:1498, TOTAL:2381
+2026-06-16 16:29:14.481 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:14.481 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:14.481 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 시작 - filePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
+2026-06-16 16:29:14.483 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 완료 - absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, 유효 스케줄 건수: 1
+2026-06-16 16:29:14.483 [scheduling-1] INFO  AnalyzeScheduleParser -   [1] serverId: dcoodb01-주문체결, sourceFilePath: null, type: 주기, day: 1-5, start: 000501, interval: 1, end: 230501
+2026-06-16 16:29:14.483 [scheduling-1] INFO  AnalyzeScheduler - [[[주기 분석 실행 결정]]] - serverId: dcoodb01-주문체결, file: null, 간격: 1분, 985번째 실행, day: 1-5, start: 000501, end: 230501
+2026-06-16 16:29:14.487 [analyze-async-1] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9447, serverId: dcoodb01-주문체결, date: 20260616
+2026-06-16 16:29:14.490 [analyze-async-1] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
+2026-06-16 16:29:15.290 [main] INFO  UserCountSpikeMockTest - [21/60] 2026-06-16T16:29:15.287836200 → HTS:2487, MTS:2964, TOTAL:5451
+2026-06-16 16:29:15.780 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:15.780 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:15.780 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 시작 - filePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
+2026-06-16 16:29:15.781 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 완료 - absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, 유효 스케줄 건수: 1
+2026-06-16 16:29:15.781 [scheduling-1] INFO  AnalyzeScheduleParser -   [1] serverId: dcoodb01-주문체결, sourceFilePath: null, type: 주기, day: 1-5, start: 000501, interval: 1, end: 230501
+2026-06-16 16:29:15.781 [scheduling-1] INFO  AnalyzeScheduler - [[[주기 분석 실행 결정]]] - serverId: dcoodb01-주문체결, file: null, 간격: 1분, 985번째 실행, day: 1-5, start: 000501, end: 230501
+2026-06-16 16:29:15.781 [analyze-async-2] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9448, serverId: dcoodb01-주문체결, date: 20260616
+2026-06-16 16:29:15.781 [analyze-async-2] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
+2026-06-16 16:29:16.615 [main] INFO  UserCountSpikeMockTest - [22/60] 2026-06-16T16:29:16.610617600 → HTS:2389, MTS:330, TOTAL:2719
+2026-06-16 16:29:25.684 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:25.684 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:25.684 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 시작 - filePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
+2026-06-16 16:29:25.684 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 완료 - absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, 유효 스케줄 건수: 1
+2026-06-16 16:29:25.684 [scheduling-1] INFO  AnalyzeScheduleParser -   [1] serverId: dcoodb01-주문체결, sourceFilePath: null, type: 주기, day: 1-5, start: 000501, interval: 1, end: 230501
+2026-06-16 16:29:25.684 [scheduling-1] INFO  AnalyzeScheduler - [[[주기 분석 실행 결정]]] - serverId: dcoodb01-주문체결, file: null, 간격: 1분, 985번째 실행, day: 1-5, start: 000501, end: 230501
+2026-06-16 16:29:25.686 [analyze-async-2] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9449, serverId: dcoodb01-주문체결, date: 20260616
+2026-06-16 16:29:25.689 [analyze-async-2] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
+2026-06-16 16:29:26.571 [main] INFO  UserCountSpikeMockTest - [22/60] 2026-06-16T16:29:26.566716700 → HTS:5177, MTS:2056, TOTAL:7233
+2026-06-16 16:29:35.035 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:35.035 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:35.035 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 시작 - filePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
+2026-06-16 16:29:35.036 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 완료 - absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, 유효 스케줄 건수: 1
+2026-06-16 16:29:35.036 [scheduling-1] INFO  AnalyzeScheduleParser -   [1] serverId: dcoodb01-주문체결, sourceFilePath: null, type: 주기, day: 1-5, start: 000501, interval: 1, end: 230501
+2026-06-16 16:29:35.037 [scheduling-1] INFO  AnalyzeScheduler - [[[주기 분석 실행 결정]]] - serverId: dcoodb01-주문체결, file: null, 간격: 1분, 985번째 실행, day: 1-5, start: 000501, end: 230501
+2026-06-16 16:29:35.044 [analyze-async-2] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9450, serverId: dcoodb01-주문체결, date: 20260616
+2026-06-16 16:29:35.048 [analyze-async-2] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
+2026-06-16 16:29:35.765 [main] INFO  UserCountSpikeMockTest - [2/60] 2026-06-16T16:29:35.759580500 → HTS:1132, MTS:2203, TOTAL:3335
+2026-06-16 16:29:36.782 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:36.782 [scheduling-1] INFO  AnalyzeScheduleParser - ==============================================================
+2026-06-16 16:29:36.782 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 시작 - filePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
+2026-06-16 16:29:36.782 [scheduling-1] INFO  AnalyzeScheduleParser - 분석 스케줄 파일 파싱 완료 - absolutePath: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf, 유효 스케줄 건수: 1
+2026-06-16 16:29:36.782 [scheduling-1] INFO  AnalyzeScheduleParser -   [1] serverId: dcoodb01-주문체결, sourceFilePath: null, type: 주기, day: 1-5, start: 000501, interval: 1, end: 230501
+2026-06-16 16:29:36.783 [scheduling-1] INFO  AnalyzeScheduler - [[[주기 분석 실행 결정]]] - serverId: dcoodb01-주문체결, file: null, 간격: 1분, 985번째 실행, day: 1-5, start: 000501, end: 230501
+2026-06-16 16:29:36.786 [analyze-async-2] INFO  AnalyzeService - 분석 이력 등록 - historyId: 9451, serverId: dcoodb01-주문체결, date: 20260616
+2026-06-16 16:29:36.788 [analyze-async-2] INFO  AnalyzeRetryService - 분석 완료 - 서버: dcoodb01-주문체결, 타입: 주기, 대상일: 20260616, 총: 0건, 에러: 0건, 경고: 0건
+2026-06-16 16:29:37.872 [main] INFO  UserCountSpikeMockTest - [42/60] 2026-06-16T16:29:37.869258500 → HTS:2174, MTS:177, TOTAL:2351

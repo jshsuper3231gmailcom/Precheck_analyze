@@ -1,298 +1,455 @@
-# PreCheck 분석 서버 소스 코드 읽기 가이드
+# PreCheck Analyze 개발자 참고 문서
 
-## 1. 서버 역할
+> 생성일: 2026-06-16 | 대상 경로: `precheck_collect/analyze`
 
-수집 서버(collect)가 DB에 저장한 로그(`TB_COLLECT_LOG`)를 읽어 분석 정책에 따라
-정상/경고/에러/정보/미분석 결과를 판정하고 `TB_ANALYZE_RESULT`에 저장하는 서버.
+---
+
+## 1. 프로젝트 개요
+
+### 목적 및 역할
+
+PreCheck Analyze는 `collect` 프로젝트가 수집하여 `TB_COLLECT_LOG`에 저장한 서버 로그를,
+분석 정책 파일(`PreCheck_AnalyzePolicy.conf`)에 따라 판정하고 결과를 `TB_ANALYZE_RESULT`에 적재하는
+**배치/주기 실행형 로그 분석 서버**다.
+
+분석 결과는 `dashboard` 프로젝트가 읽어 에러/경고/정상 현황, 히스토리, 리소스 도넛 차트 등으로 시각화한다.
+별도 HTTP 서버나 REST API는 없으며, `@Scheduled` 기반 스케줄러가 60초마다 실행 여부를 판단해 분석을 트리거한다.
+
+### 기술 스택
+
+| 항목 | 내용 |
+|------|------|
+| Language | Java 17 |
+| Framework | Spring Boot 3.5.14 |
+| Logging | Log4j2 (spring-boot-starter-log4j2, starter-logging 제외) |
+| ORM | MyBatis 3.0.5 |
+| 재시도 | Spring Retry + Spring AOP |
+| DB (테스트) | PostgreSQL 5432 |
+| DB (운영) | Altibase (JDBC 8.1.0) |
+| Build | Gradle 8 |
+| 기타 | Lombok, HikariCP, Spring DevTools |
+
+### 실행 방식
+
+**백그라운드 배치 서버** — `AnalyzeApplication.main()` 진입점. HTTP 포트 없음.
+
+```bash
+# 테스트 환경 (PostgreSQL)
+./gradlew bootRun --args='--spring.profiles.active=test'
+
+# 운영 환경 (Altibase)
+./gradlew bootRun --args='--spring.profiles.active=prod'
+```
+
+기동 시 `PolicyLoader.load()`(`@PostConstruct`)가 정책 파일을 메모리에 로딩한다.
+이후 `AnalyzeScheduler.run()`이 60초마다 실행되어 스케줄 파일을 점검하고,
+실행 조건을 만족하는 스케줄에 대해 비동기(`@Async`)로 분석 작업을 시작한다.
+
+---
+
+## 2. 데이터 흐름
+
+### 전체 흐름도
 
 ```
-[수집 서버] → TB_COLLECT_LOG → [분석 서버] → TB_ANALYZE_RESULT
-                                             → TB_ANALYZE_HISTORY
+[collect 프로젝트] ──→ TB_COLLECT_LOG (수집된 서버 로그 원문)
+
+[analyze 프로젝트]
+  ┌─ 기동 시 ─────────────────────────────────────────────────────┐
+  │  PolicyLoader (@PostConstruct)                                 │
+  │  ├─ PreCheck_AnalyzePolicy.conf 읽기                           │
+  │  └─ policyMap: { "serverId:logId" → AnalyzePolicy } 로 캐싱   │
+  └────────────────────────────────────────────────────────────────┘
+
+  ┌─ 매 60초 ─────────────────────────────────────────────────────┐
+  │  AnalyzeScheduler.run()                                        │
+  │  ├─ AnalyzeScheduleParser: PreCheck_AnalyzeLogs_Schedule.conf  │
+  │  │  (60초마다 캐시 재검사, 변경 있으면 파일 재파싱)            │
+  │  └─ 실행 조건 만족 시 AnalyzeService.analyze() @Async 호출     │
+  └────────────────────────────────────────────────────────────────┘
+
+  ┌─ 분석 실행 (비동기 스레드) ────────────────────────────────────┐
+  │  AnalyzeService.analyze()                                       │
+  │  ├─ TB_ANALYZE_HISTORY INSERT (FAIL/IN_PROGRESS 선등록)        │
+  │  └─ AnalyzeRetryService.analyzeWithRetry() 위임                │
+  │       ├─ [배치] TB_COLLECT_LOG selectForAnalyze (오늘 전체)    │
+  │       ├─ [주기] TB_COLLECT_LOG selectAfterLogId (이전 성공 이후) │
+  │       ├─ 각 로그에 대해 LogAnalyzer.analyze() 호출             │
+  │       │    └─ 판정: 정상/경고/에러/정보/미분석                  │
+  │       ├─ TB_ANALYZE_RESULT INSERT                               │
+  │       └─ TB_ANALYZE_HISTORY UPDATE (SUCCESS/FAIL 최종 기록)    │
+  │  실패 시: @Retryable → 300초 간격 3회 재시도 → @Recover         │
+  └────────────────────────────────────────────────────────────────┘
+
+[dashboard 프로젝트] ←── TB_ANALYZE_RESULT, TB_ANALYZE_HISTORY 조회
+```
+
+### 주요 시나리오별 흐름
+
+#### 배치 분석 (하루 1회, 지정 시각)
+
+```
+스케줄 파일 예시: [dcoodb01-주문체결][주기|1-5|000501|1|230501]
+                                      ↑배치아님, 주기임
+
+배치 예시(파일 내): [배치|1-5|080000]  → 평일 08:00:00 1회 실행
+
+AnalyzeScheduler.shouldRunBatch()
+  └─ 오늘 요일 일치? + 시각 범위(80초 창) 이내? + 오늘 이미 실행했음?
+      → collectLogMapper.selectForAnalyze(today, serverId, sourceFilePath)
+         [NOT EXISTS TB_ANALYZE_RESULT 조건 포함 — 기분석 로그 재처리 방지]
+```
+
+#### 주기 분석 (startTime ~ endTime 사이, intervalMinutes마다)
+
+```
+스케줄 예시: [주기|1-5|000501|1|230501]
+              → 평일 00:05:01 ~ 23:05:01 사이 1분 간격
+
+AnalyzeScheduler.shouldRunPeriodic()
+  └─ runIndex = (nowSeconds - startSeconds) / intervalSeconds
+     → 같은 runIndex에서 중복 실행 방지 (lastPeriodicRunIndexByKey 맵)
+
+AnalyzeRetryService.analyzeInternal()
+  └─ 주기: analyzeHistoryMapper.selectLastSuccess() → lastAnalyzeLogId 조회
+     └─ collectLogMapper.selectAfterLogId(today, serverId, path, lastLogId)
+        → 이전 성공 분석 이후 신규 로그만 처리 (중복 분석 방지)
+```
+
+#### 분석 로직 분기 (logType별 Analyzer)
+
+```
+AnalyzeRetryService.analyzeOne(CollectLog)
+  └─ PolicyLoader.findPolicy(serverId, logId)
+      ├─ null → buildUnanalyzedResult() → 미분석 반환
+      └─ policy found →
+          logType="문구" → PhraseAnalyzer  → 에러 키워드 포함 여부
+          logType="수치" → NumericAnalyzer → 임계치 비교, 경고 구간 계산
+          logType="날짜" → DateAnalyzer    → 로그 내 날짜 == 오늘 비교
+          logType="존재" → ExistenceAnalyzer → 로그 존재 자체가 에러
+          logType="정보" → InfoAnalyzer    → 항상 정보 레벨 반환
+          logType="비교" → CompareAnalyzer → $A$ == $B$ 두 수치 일치 여부
+          logType="시간" → TimeAnalyzer    → HH:mm 시간 임계치 비교
 ```
 
 ---
 
-## 2. 프로젝트 디렉토리 구조
+## 3. 디렉토리 및 파일 구조
+
+### 디렉토리 역할
 
 ```
-src/main/java/com/sks/precheck/analyze/
-│
-├── AnalyzeApplication.java          # Spring Boot 진입점 (@EnableScheduling)
-│
-├── scheduler/
-│   └── AnalyzeScheduler.java        # 60초마다 실행, 스케줄 파일 해석 → 분석 트리거
-│
-├── service/
-│   ├── AnalyzeService.java          # 분석 진입점: @Async 비동기 실행, 이력 선등록 후 RetryService 위임
-│   └── AnalyzeRetryService.java     # 실제 분석 수행 (@Retryable 10초 간격 3회 재시도)
-│
-├── analyzer/                        # [Strategy Pattern] 로그 타입별 분석 구현체
-│   ├── LogAnalyzer.java             #   └─ 인터페이스
-│   ├── PhraseAnalyzer.java          #   └─ 문구형: 키워드 포함 여부
-│   ├── NumericAnalyzer.java         #   └─ 수치형: 임계치 비교 + 경고 구간
-│   ├── DateAnalyzer.java            #   └─ 날짜형: 오늘 날짜 일치 여부
-│   ├── ExistenceAnalyzer.java       #   └─ 존재형: 로그 존재 자체가 에러
-│   └── InfoAnalyzer.java            #   └─ 정보형: 분석 없이 LEVEL_INFO 저장
-│
-├── domain/
-│   ├── CollectLog.java              # TB_COLLECT_LOG 조회용 DTO
-│   ├── AnalyzeResult.java           # TB_ANALYZE_RESULT 저장용 DTO
-│   ├── AnalyzeHistory.java          # TB_ANALYZE_HISTORY 저장용 DTO
-│   └── policy/                      # 분석 정책 도메인
-│       ├── AnalyzePolicy.java       #   └─ 인터페이스 (serverId, logId, logType)
-│       ├── PhrasePolicy.java        #   └─ 문구형: errorKeywords 목록
-│       ├── NumericPolicy.java       #   └─ 수치형: operator, threshold, warningRatio
-│       ├── DatePolicy.java          #   └─ 날짜형
-│       ├── ExistencePolicy.java     #   └─ 존재형
-│       └── InfoPolicy.java          #   └─ 정보형
-│
-├── config/
-│   ├── PolicyLoader.java            # 서버 시작 시 정책 파일 1회 로딩 → HashMap
-│   ├── DataSourceConfig.java        # 프로파일별 DataSource (test=PostgreSQL, prod=Altibase)
-│   ├── MyBatisConfig.java           # @MapperScan
-│   └── RetryConfig.java             # @EnableRetry 활성화
-│
-├── parser/
-│   ├── AnalyzePolicyParser.java     # 정책 파일 한 라인 파싱 → AnalyzePolicy 객체
-│   └── AnalyzeScheduleParser.java   # 스케줄 파일 전체 파싱 → AnalyzeScheduleVo 목록
-│
-├── mapper/
-│   ├── CollectLogMapper.java        # TB_COLLECT_LOG SELECT
-│   ├── AnalyzeResultMapper.java     # TB_ANALYZE_RESULT INSERT
-│   └── AnalyzeHistoryMapper.java    # TB_ANALYZE_HISTORY INSERT/UPDATE/SELECT
-│
-├── vo/
-│   └── AnalyzeScheduleVo.java       # 스케줄 파일 한 항목의 메모리 표현
-│
-└── common/
-    ├── constants/AnalyzeConstants.java  # 로그 타입, 분석 레벨, 상태 상수
-    ├── exception/AnalyzeException.java  # @Retryable 트리거 예외
-    └── util/
-        ├── DateUtil.java            # 날짜 포맷 유틸
-        └── SequenceHelper.java      # DB Sequence nextval (PostgreSQL/Altibase 분기)
+analyze/
+├── src/main/java/com/sks/precheck/analyze/
+│   ├── analyzer/        LogAnalyzer 인터페이스 + 7개 구현체 (logType별 분석)
+│   ├── common/
+│   │   ├── constants/   AnalyzeConstants — 로그 타입, 레벨, 상태 상수
+│   │   ├── exception/   AnalyzeException — 재시도 트리거용 도메인 예외
+│   │   └── util/        DateUtil, SequenceHelper
+│   ├── config/          AsyncConfig, DataSourceConfig, MyBatisConfig,
+│   │                    PolicyLoader, RetryConfig
+│   ├── domain/          AnalyzeHistory, AnalyzeResult, CollectLog (도메인 VO)
+│   │   └── policy/      7개 정책 도메인 (AnalyzePolicy 인터페이스 + 구현체)
+│   ├── mapper/          MyBatis Mapper 인터페이스 3개
+│   ├── parser/          AnalyzePolicyParser, AnalyzeScheduleParser
+│   ├── scheduler/       AnalyzeScheduler — @Scheduled 진입점
+│   ├── service/         AnalyzeService, AnalyzeRetryService
+│   └── vo/              AnalyzeScheduleVo
+├── src/main/resources/
+│   ├── application.yml         기본 설정 (MyBatis, 프로파일)
+│   ├── application-test.yml    PostgreSQL 테스트 환경
+│   ├── application-prod.yml    Altibase 운영 환경 + 파일 경로
+│   ├── cfg/                    (빈 디렉토리, 운영 서버에 실제 conf 파일 위치)
+│   ├── mapper/                 MyBatis XML 쿼리 3개
+│   └── log4j2-spring.xml       로그 설정 (파일 롤링, 콘솔)
+├── analyze_sample/             분석 정책 파일 샘플
+│   ├── PreCheck_AnalyzePolicy.conf       운영 정책 샘플
+│   └── PreCheck_AnalyzePolicy_jcm.conf  테스트용 정책 샘플
+├── schedule_sample/            스케줄 파일 샘플
+│   └── PreCheck_AnalyzeLogs_Schedule.conf
+├── logs/                       로그 파일 (precheck-analyze.log + 날짜별 gz)
+└── scripts/                    보조 스크립트
+    └── fix-terminal-encoding.ps1
 ```
+
+### 주요 파일 목록
+
+| 파일 | 역할 |
+|------|------|
+| `AnalyzeApplication.java` | Spring Boot 진입점 (`@EnableAsync`, `@EnableRetry`) |
+| `scheduler/AnalyzeScheduler.java` | 60초마다 스케줄 파일 점검 후 분석 트리거 |
+| `service/AnalyzeService.java` | 분석 이력 선등록 후 AnalyzeRetryService 위임 |
+| `service/AnalyzeRetryService.java` | 실제 분석 수행, @Retryable 재시도, @Recover 마감 |
+| `analyzer/LogAnalyzer.java` | 분석기 공통 인터페이스 (`analyze(CollectLog, AnalyzePolicy)`) |
+| `analyzer/PhraseAnalyzer.java` | 문구형 — 에러 키워드 포함 시 에러 |
+| `analyzer/NumericAnalyzer.java` | 수치형 — 임계치 비교 + 경고 구간(warningRatio%) |
+| `analyzer/DateAnalyzer.java` | 날짜형 — 로그 내 날짜가 오늘인지 확인 |
+| `analyzer/ExistenceAnalyzer.java` | 존재형 — 로그 존재 자체가 에러 |
+| `analyzer/InfoAnalyzer.java` | 정보형 — 항상 정보 레벨 반환 |
+| `analyzer/CompareAnalyzer.java` | 비교형 — $A$ == $B$ 두 수치 동일 여부 |
+| `analyzer/TimeAnalyzer.java` | 시간형 — HH:mm 임계치 비교 |
+| `config/PolicyLoader.java` | 정책 파일 기동 시 1회 로딩, "serverId:logId" 키 O(1) 조회 |
+| `config/AsyncConfig.java` | analyzeTaskExecutor 스레드풀 (core5, max20, queue50) |
+| `config/RetryConfig.java` | Spring Retry 활성화 설정 |
+| `parser/AnalyzePolicyParser.java` | 정책 파일 라인 파서 (`[serverId][logId][타입][...]`) |
+| `parser/AnalyzeScheduleParser.java` | 스케줄 파일 파서, 중복 serverId+path는 마지막이 최종 |
+| `domain/policy/AnalyzePolicy.java` | 정책 도메인 인터페이스 |
+| `common/constants/AnalyzeConstants.java` | 로그 타입/레벨/상태/재시도 상수 |
+| `common/util/SequenceHelper.java` | DB 시퀀스 nextval 조회 (PostgreSQL/Altibase 분기) |
+| `mapper/AnalyzeHistoryMapper.xml` | 이력 INSERT/UPDATE/마지막 성공 SELECT |
+| `mapper/CollectLogMapper.xml` | 배치용 전체 조회, 주기용 LogId 이후 조회 |
+| `mapper/AnalyzeResultMapper.xml` | 분석 결과 INSERT |
+| `analyze_sample/PreCheck_AnalyzePolicy.conf` | 정책 파일 포맷 실제 샘플 (7종 타입 전부 포함) |
+| `schedule_sample/PreCheck_AnalyzeLogs_Schedule.conf` | 스케줄 파일 포맷 샘플 |
 
 ---
 
-## 3. 전체 실행 흐름
+## 4. 소스별 주요 함수/메서드
 
-```
-[1] 서버 기동
-     │
-     ├─ PolicyLoader.load()          ← @PostConstruct
-     │   정책 파일(PreCheck_AnalyzePolicy.conf) 전체 읽기
-     │   → policyMap { "serverId:logId" → AnalyzePolicy }
-     │
-     └─ 스케줄러 대기 시작
+### AnalyzeScheduler
 
-[2] AnalyzeScheduler.run()           ← @Scheduled fixedDelay=60초
-     │
-     ├─ getSchedules()               스케줄 파일 캐시 로드 (60초 유효)
-     │
-     └─ for each schedule:
-          shouldRun(schedule, now)?
-          ├─ 배치: 지정 요일 + 지정 시각 + 오늘 첫 1회
-          └─ 주기: startTime~endTime 사이 intervalMinutes 간격마다
+| 메서드 | 설명 |
+|--------|------|
+| `run()` | `@Scheduled(fixedDelay=60000)` — 스케줄 목록 로드 후 shouldRun 판단, 통과 시 analyze() 호출 |
+| `getSchedules()` | 60초 캐시 적용 스케줄 파일 로드 (캐시 만료 시 재파싱) |
+| `shouldRun(schedule, now)` | 요일 일치 → 배치/주기 분기 호출 |
+| `shouldRunBatch(...)` | 오늘 실행 여부 판단 (`lastBatchRunDateByKey` 중복 방지) |
+| `shouldRunPeriodic(...)` | runIndex 기반 구간 판단 (`lastPeriodicRunIndexByKey` 중복 방지) |
+| `isTodayMatched(daySpec, date)` | `*`, `0-6`, `1-5`, 단일 숫자 요일 스펙 파싱 (0=일, 1=월~6=토) |
+| `parseTime(hhmmss)` | `HHmmss` 6자리 → `LocalTime` 변환 |
+| `buildScheduleKey(schedule)` | serverId + path + type + day + start + interval + end 조합 키 |
 
-[3] AnalyzeService.analyze(scheduleVo)   ← @Async("analyzeTaskExecutor") — 스케줄러 스레드 즉시 반환
-     │                                      각 스케줄은 analyzeTaskExecutor 풀의 독립 스레드에서 실행
-     ├─ SEQ_ANALYZE_HISTORY.nextval
-     │
-     ├─ TB_ANALYZE_HISTORY INSERT    상태=FAIL, failReason="IN_PROGRESS"
-     │   (JVM 비정상 종료 시에도 미완료 이력이 DB에 남도록 선등록)
-     │
-     └─ AnalyzeRetryService.analyzeWithRetry(...)
+### AnalyzeService
 
-[4] AnalyzeRetryService.analyzeWithRetry()  ← @Retryable(AnalyzeException, 4회, 10s)
-     │
-     └─ analyzeInternal(...)
-          │
-          ├─ [주기 스케줄만] selectLastSuccess()
-          │   마지막 SUCCESS 이력의 lastAnalyzeLogId 조회
-          │
-          ├─ TB_COLLECT_LOG 조회
-          │   ├─ 배치: selectForAnalyze(오늘 날짜 전체)
-          │   └─ 주기: selectAfterLogId(lastAnalyzeLogId 이후 신규만)
-          │
-          ├─ for each collectLog:
-          │    analyzeOne(collectLog)
-          │    │
-          │    ├─ policyLoader.findPolicy(serverId, logId)
-          │    │   → null이면 LEVEL_UNANALYZED 반환
-          │    │
-          │    └─ logType에 따라 Analyzer 선택
-          │         문구 → PhraseAnalyzer
-          │         수치 → NumericAnalyzer
-          │         날짜 → DateAnalyzer
-          │         존재 → ExistenceAnalyzer
-          │         정보 → InfoAnalyzer
-          │
-          ├─ TB_ANALYZE_RESULT INSERT (건별)
-          │
-          └─ TB_ANALYZE_HISTORY UPDATE (상태=SUCCESS, 통계)
+| 메서드 | 설명 |
+|--------|------|
+| `analyze(scheduleVo)` | `@Async("analyzeTaskExecutor")` — 이력 선등록 후 AnalyzeRetryService 위임 |
+| `parseScheduleType(type)` | "배치"/"주기" 검증, 그 외 AnalyzeException 투척 |
 
-[5] 실패 시: @Recover.recover()
-     TB_ANALYZE_HISTORY UPDATE (상태=FAIL, failReason=예외 메시지)
-```
+### AnalyzeRetryService
 
----
+| 메서드 | 설명 |
+|--------|------|
+| `analyzeWithRetry(...)` | `@Retryable(AnalyzeException, maxAttempts=4, delay=300000ms)` — analyzeInternal 호출, 실패 시 재시도 |
+| `analyzeInternal(...)` | 배치/주기 분기 후 로그 조회 → 각 로그 analyzeOne() → 결과 INSERT → 이력 UPDATE |
+| `analyzeOne(collectLog)` | PolicyLoader.findPolicy() → logType별 Analyzer 위임 → 미분석 fallback |
+| `buildUnanalyzedResult(log)` | 정책 미등록 시 미분석 AnalyzeResult 생성 |
+| `recover(e, ...)` | `@Recover` — 최대 재시도 소진 후 이력 FAIL 업데이트, 에러 로그 |
 
-## 4. 분석 레벨 판정 기준
+### PolicyLoader
 
-| 로그 타입 | 판정 조건 | 결과 레벨 |
-|-----------|-----------|-----------|
-| 문구(PhraseAnalyzer) | 에러 키워드 포함 | LEVEL_ERROR |
-| | 에러 키워드 없음 | LEVEL_NORMAL |
-| 수치(NumericAnalyzer) | 조건식 불만족 또는 logValue null | LEVEL_ERROR |
-| | 조건식 만족 + 임계치 근접(warningRatio%) | LEVEL_WARNING |
-| | 조건식 만족 + 경고 구간 밖 | LEVEL_NORMAL |
-| 날짜(DateAnalyzer) | 로그 내 yyyy/MM/dd가 오늘과 다름, 또는 날짜 없음 | LEVEL_ERROR |
-| | 로그 내 yyyy/MM/dd가 오늘과 일치 | LEVEL_NORMAL |
-| 존재(ExistenceAnalyzer) | 로그 존재 자체가 에러 | LEVEL_ERROR |
-| 정보(InfoAnalyzer) | 항상 | LEVEL_INFO |
-| 정책 미등록 | logId가 정책 파일에 없음 | LEVEL_UNANALYZED |
+| 메서드 | 설명 |
+|--------|------|
+| `load()` | `@PostConstruct` — 정책 파일 읽기, "serverId:logId" 키로 HashMap 구성 |
+| `findPolicy(serverId, logId)` | O(1) 정책 조회 |
+| `getPolicyMap()` | 불변 뷰 반환 (테스트/디버깅용) |
 
-**수치형 경고 구간 계산 (`<`, `<=` 연산자):**
-```
-warningDelta = threshold × warningRatio / 100
-경고 구간 = [threshold - warningDelta, threshold)
-예) threshold=100, warningRatio=20 → logValue가 80 이상 100 미만이면 LEVEL_WARNING
-```
+### AnalyzePolicyParser
 
-**수치형 경고 구간 계산 (`>`, `>=` 연산자):**
-```
-경고 구간 = (threshold, threshold + warningDelta]
-예) threshold=10, warningRatio=20 → logValue가 10 초과 12 이하이면 LEVEL_WARNING
-```
+| 메서드 | 설명 |
+|--------|------|
+| `parse(line)` | 한 줄 파싱 → 타입 판별 → 타입별 Policy 객체 반환 (실패 시 null) |
+| `parsePhrasePolicy(...)` | `[문구][에러키워드,...]` 파싱 |
+| `parseNumericPolicy(...)` | `[수치][연산자][임계치][경고비율]` 파싱 |
+| `parseDatePolicy(...)` | `[날짜]` — 파라미터 없음 |
+| `parseExistencePolicy(...)` | `[존재]` — 파라미터 없음 |
+| `parseInfoPolicy(...)` | `[정보]` — 파라미터 없음 |
+| `parseComparePolicy(...)` | `[비교]` — 파라미터 없음 |
+| `parseTimePolicy(...)` | `[시간][연산자][HH:mm]` 파싱 |
+| `extractBracketTokens(text)` | `[...]` 괄호 토큰 추출 (순서 보장) |
+
+### AnalyzeScheduleParser
+
+| 메서드 | 설명 |
+|--------|------|
+| `parseScheduleFile(filePath)` | 파일 전체 읽기, 중복 serverId+path는 LinkedHashMap remove→put으로 마지막이 우선 |
+| `parseLine(line, lineNo)` | `[serverId][sourceFilePath?][배치\|주기\|...]` 형식 파싱 |
+| `parseScheduleExpression(expr)` | `배치\|요일\|시작시간` 또는 `주기\|요일\|시작\|간격\|종료` 파싱 |
+| `isValidDaySpec(daySpec)` | `*`, 단일 숫자, `0-6` 범위 형식 검증 |
+| `isValidTimeHhmmss(text, isStart)` | 6자리 숫자 시간 포맷 검증 |
+
+### Analyzer 구현체 공통 패턴
+
+모든 Analyzer는 `LogAnalyzer.analyze(CollectLog log, AnalyzePolicy policy)` → `AnalyzeResult` 구조.
+
+| Analyzer | logType | 판정 로직 |
+|----------|---------|-----------|
+| `PhraseAnalyzer` | 문구 | `logContent`에 에러 키워드 포함 시 에러, 없으면 정상 |
+| `NumericAnalyzer` | 수치 | `logValue` (또는 `$값$` 파싱) vs threshold + operator. 경고 구간 = threshold ± warningRatio% |
+| `DateAnalyzer` | 날짜 | `logContent`에서 `yyyy/MM/dd` 추출, 오늘 날짜와 비교 |
+| `ExistenceAnalyzer` | 존재 | 로그 존재 자체가 에러 (파일/프로세스 부재를 의미) |
+| `InfoAnalyzer` | 정보 | 항상 정보 레벨 반환 (분석 없이 저장) |
+| `CompareAnalyzer` | 비교 | `logContent`/`rawLog`에서 `$A$$B$` 두 숫자 파싱 후 동일 여부 비교 |
+| `TimeAnalyzer` | 시간 | `$HH:mm$` 토큰 파싱 후 policy.operator와 thresholdTime 비교 |
+
+### SequenceHelper
+
+| 메서드 | 설명 |
+|--------|------|
+| `nextval(sequenceName)` | DB 시퀀스 다음 값 조회. PostgreSQL: `nextval('seq')`, Altibase: `seq.NEXTVAL FROM DUAL` |
 
 ---
 
-## 5. 설정 파일
+## 5. 리소스 및 DB 환경
 
-### application-{profile}.yml
+### DB 연결 정보
 
-```yaml
-precheck:
-  analyze:
-    policy-file-path:   # 분석 정책 파일 경로 (미설정 시 {user.home}/cfg/PreCheck_AnalyzePolicy.conf)
-    schedule-file-path: # 분석 스케줄 파일 경로 (미설정 시 {user.home}/cfg/PreCheck_AnalyzeLogs_Schedule.conf)
-    scheduler:
-      reload-interval-ms: 60000   # 스케줄 파일 캐시 유효 시간(ms)
-```
+| 환경 | Driver | URL | 계정 |
+|------|--------|-----|------|
+| 테스트 (`-test`) | `org.postgresql.Driver` | `jdbc:postgresql://localhost:5432/postgres` | `postgres` |
+| 운영 (`-prod`) | `Altibase.jdbc.driver.AltibaseDriver` | `jdbc:Altibase://192.168.0.1:20300/precheck` | `precheck` |
 
-| 항목 | 로딩 시점 | 클래스 |
-|------|-----------|--------|
-| 정책 파일 | 서버 시작 1회 | `PolicyLoader` |
-| 스케줄 파일 | 60초마다 (캐시) | `AnalyzeScheduler.getSchedules()` |
+> 운영 비밀번호: `application-prod.yml`에 `precheck` (운영 시 별도 관리 권장).
 
----
+### 커넥션 풀 (HikariCP)
 
-### 분석 정책 파일 (PreCheck_AnalyzePolicy.conf)
+| 환경 | 설정 | 값 |
+|------|------|-----|
+| 테스트 | `initialization-fail-timeout` | `-1` (DB 없어도 기동 허용) |
+| 운영 | HikariCP 기본값 | 별도 튜닝 설정 없음 |
 
-```
-# 형식: [serverId][logId][로그타입][타입별 파라미터...]
+### 비동기 스레드풀 (analyzeTaskExecutor)
 
-[서버1][ERRLINE][수치][<=][0][1]
-# ↑serverId  ↑logId  ↑타입  ↑연산자 ↑임계치 ↑경고비율(%)
+| 설정 | 값 | 의미 |
+|------|-----|------|
+| `corePoolSize` | 5 | 평시 동시 분석 수 |
+| `maxPoolSize` | 20 | 최대 동시 분석 수 (서버 최대 100대 기준) |
+| `queueCapacity` | 50 | 포화 시 대기 큐 크기 |
+| `keepAliveSeconds` | 60 | 유휴 스레드 유지 시간 |
+| `threadNamePrefix` | `analyze-async-` | 로그에서 스레드 식별용 |
 
-[서버1][SYS_MSG][문구][에러,실패,오류,ERROR,Exception]
-# ↑serverId  ↑logId  ↑타입  ↑에러키워드목록(콤마구분)
+### Spring Retry 설정
 
-[서버1][BDAY][날짜]        # 파라미터 없음
-[서버1][FILE_LOCK][존재]   # 파라미터 없음
-[서버1][DAILY_SUMMARY][정보] # 파라미터 없음
-```
+| 설정 | 값 | 의미 |
+|------|-----|------|
+| `MAX_RETRY_COUNT` | 3 | 최대 재시도 횟수 (maxAttempts = 4 = 최초 1 + 재시도 3) |
+| `RETRY_DELAY_MILLISECONDS` | 300,000ms (5분) | 재시도 간격 |
+| 대상 예외 | `AnalyzeException` | DB 연결 오류, 분석 로직 오류 |
+| `@Recover` | `recover()` | 모두 실패 시 이력을 FAIL로 마감 |
 
-- `#`으로 시작하는 줄은 주석
-- 같은 `serverId:logId`가 중복되면 **마지막 정의**가 적용됨
-- 파싱 실패 라인은 WARN 로그 기록 후 스킵 (예외 없음)
+### 사용 테이블
 
----
+| 테이블 | 이 프로젝트에서의 역할 |
+|--------|----------------------|
+| `TB_COLLECT_LOG` | SELECT 전용 — 분석 대상 로그 입력원 |
+| `TB_ANALYZE_RESULT` | INSERT 전용 — 분석 결과 적재 |
+| `TB_ANALYZE_HISTORY` | INSERT + UPDATE — 분석 실행 이력 관리 |
 
-### 분석 스케줄 파일 (PreCheck_AnalyzeLogs_Schedule.conf)
+### 외부 파일 리소스
 
-```
-# 배치 형식: [serverId][sourceFilePath][배치|daySpec|HHmmss]
-[서버1][/logs/system.log][배치|1-5|090000]
-# → 월~금(1-5) 09:00:00에 배치 분석 1회 실행
-
-# 주기 형식: [serverId][sourceFilePath][주기|daySpec|HHmmss|간격(분)|HHmmss]
-[서버1][/logs/system.log][주기|1-5|090000|30|180000]
-# → 월~금(1-5) 09:00~18:00 사이 30분 간격으로 반복 실행
-
-# daySpec 표기:
-#   *     = 매일
-#   1     = 특정 요일 하나 (0=일, 1=월, ..., 6=토)
-#   1-5   = 요일 범위 (월~금)
-```
-
-- 같은 `serverId+sourceFilePath` 중복 시 **마지막 정의** 적용
-- `sourceFilePath` 생략 가능 → `[serverId][배치|...]` 형식도 허용
+| 파일 | 기본 경로 | 역할 |
+|------|-----------|------|
+| `PreCheck_AnalyzeLogs_Schedule.conf` | `precheck.analyze.schedule-file-path` 또는 `{user.home}/cfg/...` | 분석 대상 서버별 스케줄 정의 |
+| `PreCheck_AnalyzePolicy.conf` | `precheck.analyze.policy-file-path` 또는 `{user.home}/cfg/...` | 서버/LOG_ID별 분석 정책 정의 |
 
 ---
 
-## 6. 재시도 동작
+## 6. 설정 파일 분석
 
+### `src/main/resources/application.yml` (기본 설정)
+
+| 항목 | 기본값 | 설명 |
+|------|--------|------|
+| `spring.application.name` | `analyze` | 애플리케이션 식별명 |
+| `spring.profiles.active` | `test` | 기본 활성 프로파일 |
+| `mybatis.mapper-locations` | `classpath:/mapper/*.xml` | MyBatis XML 위치 |
+| `mybatis.type-aliases-package` | `com.sks.precheck.analyze.domain` | 도메인 타입 별칭 패키지 |
+| `mybatis.configuration.map-underscore-to-camel-case` | `true` | DB 컬럼 언더스코어 → camelCase 자동 변환 |
+
+### `src/main/resources/application-test.yml` (PostgreSQL 테스트)
+
+| 항목 | 값 | 설명 |
+|------|-----|------|
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5432/postgres` | 로컬 PostgreSQL |
+| `spring.datasource.driver-class-name` | `org.postgresql.Driver` | PostgreSQL JDBC |
+| `hikari.initialization-fail-timeout` | `-1` | DB 없어도 앱 기동 허용 |
+| `precheck.analyze.schedule-file-path` | (로컬 절대경로) | 테스트용 스케줄 파일 경로 |
+| `precheck.analyze.policy-file-path` | `...PreCheck_AnalyzePolicy_jcm.conf` | 테스트용 정책 파일 (jcm 버전) |
+
+### `src/main/resources/application-prod.yml` (Altibase 운영)
+
+| 항목 | 값 | 설명 |
+|------|-----|------|
+| `spring.datasource.url` | `jdbc:Altibase://192.168.0.1:20300/precheck` | 운영 Altibase |
+| `spring.datasource.driver-class-name` | `Altibase.jdbc.driver.AltibaseDriver` | Altibase JDBC (별도 jar 필요) |
+| `precheck.analyze.schedule-file-path` | (운영 서버 절대경로) | 운영 스케줄 파일 |
+| `precheck.analyze.policy-file-path` | (운영 서버 절대경로) | 운영 정책 파일 |
+
+> `precheck.analyze.schedule-file-path`와 `precheck.analyze.policy-file-path`를 설정하지 않으면
+> `{user.home}/cfg/PreCheck_AnalyzeLogs_Schedule.conf`, `{user.home}/cfg/PreCheck_AnalyzePolicy.conf`를 기본으로 사용한다.
+
+### `analyze_sample/PreCheck_AnalyzePolicy.conf` (정책 파일 포맷)
+
+| 필드 위치 | 의미 | 예시 |
+|-----------|------|------|
+| `[0]` | serverId | `dlprem01-테스트개발` |
+| `[1]` | logId | `DISK_HOME` |
+| `[2]` | logType | `수치` / `문구` / `날짜` / `존재` / `정보` / `비교` / `시간` |
+| `[3]` (수치) | 연산자 | `<`, `<=`, `>`, `>=`, `=` |
+| `[4]` (수치) | 임계치 | `90` |
+| `[5]` (수치) | 경고 비율(%) | `20` → threshold 80% 이상이면 경고 |
+| `[3]` (문구) | 에러 키워드 CSV | `오류,Exception,error` |
+| `[3]` (시간) | 연산자 | `<=` |
+| `[4]` (시간) | 임계치 시간 HH:mm | `08:10` |
+
+**수치형 경고 구간 예시:**
+- `[수치][<][90][20]` → logValue < 90 이면 정상, 72 이상이면 경고(90의 20%=18), 90 이상이면 에러
+
+### `schedule_sample/PreCheck_AnalyzeLogs_Schedule.conf` (스케줄 파일 포맷)
+
+| 필드 | 의미 | 예시 |
+|------|------|------|
+| `[0]` | serverId | `dcoodb01-주문체결` |
+| `[1]` (선택) | sourceFilePath | 생략 시 null — 해당 서버 전체 파일 경로 |
+| 마지막 `[N]` | 스케줄 표현식 | `주기\|1-5\|000501\|1\|230501` |
+
+**스케줄 표현식 문법:**
 ```
-analyzeWithRetry() 호출
-  │
-  ├─ 1차 시도
-  │   AnalyzeException 발생 → 10초 대기
-  │
-  ├─ 2차 재시도
-  │   AnalyzeException 발생 → 10초 대기
-  │
-  ├─ 3차 재시도
-  │   AnalyzeException 발생 → 10초 대기
-  │
-  ├─ 4차 재시도 (maxAttempts=4)
-  │   AnalyzeException 발생
-  │
-  └─ @Recover.recover() 호출
-      TB_ANALYZE_HISTORY UPDATE → 상태=FAIL
+배치|요일|시작시간(HHmmss)
+주기|요일|시작시간(HHmmss)|간격(분)|종료시간(HHmmss)
+
+요일: * = 매일, 0=일, 1=월, ..., 6=토, 1-5=평일
+예) 주기|1-5|000501|1|230501 → 평일 00:05:01 ~ 23:05:01 사이 1분 간격
 ```
 
-`AnalyzeException` 이외의 예외도 내부에서 `AnalyzeException`으로 래핑하여 재시도 대상이 된다.
+### `src/main/resources/log4j2-spring.xml` (로그 설정)
+
+| 설정 | 내용 |
+|------|------|
+| 콘솔 출력 | 표준 출력 패턴 |
+| 파일 출력 | `logs/precheck-analyze.log` — 일별 롤링, gz 압축 보관 |
+| 로거 | `com.sks.precheck.analyze` 패키지 기준 |
 
 ---
 
-## 7. DB 테이블 관계
+## 7. 로그 타입 및 판정 레벨 상수 요약
 
-```
-TB_COLLECT_LOG (수집 서버가 INSERT)
-  collectLogId (PK)
-  serverId, sourceFilePath
-  logType, logId
-  logContent, logValue, logTimestamp
-  collectDate
-        │
-        │  분석 서버가 읽기
-        ▼
-TB_ANALYZE_RESULT (분석 서버가 INSERT)
-  analyzeResultId (PK, SEQ_ANALYZE_RESULT)
-  collectLogId (FK)
-  analyzeLevel   ← 정상/경고/에러/정보/미분석
-  analyzeMessage
-  thresholdValue, thresholdOperator, warningRatio  ← 수치형만 사용
-  notifyYn = 'N'  ← 통보 서버가 'Y'로 갱신
+### 로그 타입 (AnalyzeConstants)
 
-TB_ANALYZE_HISTORY (분석 서버가 INSERT/UPDATE)
-  analyzeHistoryId (PK, SEQ_ANALYZE_HISTORY)
-  serverId, sourceFilePath
-  analyzeStatus  ← SUCCESS / FAIL (IN_PROGRESS는 failReason으로 표시)
-  totalCount, successCount, errorCount, warningCount
-  lastAnalyzeLogId  ← 주기 스케줄의 재개 지점
-```
+| 상수 | 값 | 정책 파일 키워드 |
+|------|-----|----------------|
+| `LOG_TYPE_TEXT` | `"문구"` | `[문구]` |
+| `LOG_TYPE_NUMERIC` | `"수치"` | `[수치]` |
+| `LOG_TYPE_DATE` | `"날짜"` | `[날짜]` |
+| `LOG_TYPE_EXIST` | `"존재"` | `[존재]` |
+| `LOG_TYPE_INFO` | `"정보"` | `[정보]` |
+| `LOG_TYPE_COMPARE` | `"비교"` | `[비교]` |
+| `LOG_TYPE_TIME` | `"시간"` | `[시간]` |
 
----
+### 분석 레벨
 
-## 8. 코드 읽기 추천 순서
+| 상수 | 값 | 의미 |
+|------|-----|------|
+| `LEVEL_NORMAL` | `"정상"` | 정상 판정 |
+| `LEVEL_WARNING` | `"경고"` | 경고 구간 (수치형만 해당) |
+| `LEVEL_ERROR` | `"에러"` | 에러 판정 |
+| `LEVEL_INFO` | `"정보"` | 정보형 로그 |
+| `LEVEL_UNANALYZED` | `"미분석"` | 정책 미등록 또는 파싱 실패 |
 
-1. **`AnalyzeConstants.java`** — 상수 전체를 먼저 파악 (로그 타입, 레벨, 상태)
-2. **`domain/` 패키지** — DTO와 Policy 도메인 모델 구조 파악
-3. **`config/PolicyLoader.java`** — 정책 파일이 어떻게 메모리에 올라가는지
-4. **`analyzer/NumericAnalyzer.java`** — 가장 복잡한 분석 로직 (경고 구간 계산)
-5. **`service/AnalyzeRetryService.java`** — 핵심 분석 루프 (`analyzeInternal`)
-6. **`service/AnalyzeService.java`** — 이력 선등록 패턴 이해
-7. **`scheduler/AnalyzeScheduler.java`** — 스케줄 판별 로직 (`shouldRunBatch`, `shouldRunPeriodic`)
-8. **`parser/` 패키지** — 설정 파일 포맷 파싱 규칙
+### 분석 이력 상태
+
+| 상수 | 값 | 의미 |
+|------|-----|------|
+| `STATUS_SUCCESS` | `"SUCCESS"` | 정상 완료 |
+| `STATUS_FAIL` | `"FAIL"` | 실패 (선등록 시 `IN_PROGRESS`, 최종 실패 시 사유 기재) |
+| `STATUS_PARTIAL` | `"PARTIAL"` | 부분 성공 (현재 미사용, 확장 예약) |
