@@ -5,7 +5,9 @@ import com.sks.precheck.analyze.common.exception.AnalyzeException;
 import com.sks.precheck.analyze.domain.AnalyzeResult;
 import com.sks.precheck.analyze.domain.CollectLog;
 import com.sks.precheck.analyze.domain.policy.AnalyzePolicy;
+import com.sks.precheck.analyze.domain.policy.ComparePolicy;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -16,13 +18,17 @@ import org.springframework.stereotype.Component;
 public class CompareAnalyzer implements LogAnalyzer {
 
     private static final Pattern DOLLAR_PATTERN = Pattern.compile("\\$([^$]+)\\$");
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final int CALC_SCALE = 6;
 
     @Override
     public AnalyzeResult analyze(CollectLog log, AnalyzePolicy policy) {
-        if (!"ComparePolicy".equals(policy.getClass().getSimpleName())) {
+        if (!(policy instanceof ComparePolicy)) {
             throw new AnalyzeException("비교형 정책이 아니다 - serverId: " + log.getServerId() + ", logId: " + log.getLogId()
                     + ", 수집로그타입: " + log.getLogType() + ", 정책타입: " + policy.getLogType() + "(" + policy.getClass().getSimpleName() + ")");
         }
+
+        ComparePolicy comparePolicy = (ComparePolicy) policy;
 
         String contentWithTokens = extractContentWithTokens(log);
         ParsedTwoNumbers parsed = parseTwoNumbers(contentWithTokens);
@@ -33,13 +39,36 @@ public class CompareAnalyzer implements LogAnalyzer {
             return result;
         }
 
-        boolean matched = parsed.a.compareTo(parsed.b) == 0;
-        String level = matched ? AnalyzeConstants.LEVEL_NORMAL : AnalyzeConstants.LEVEL_ERROR;
+        BigDecimal toleranceRatio = comparePolicy.getToleranceRatio();
+        String level = decideLevel(parsed.a, parsed.b, toleranceRatio);
 
         AnalyzeResult result = baseResult(log);
         result.setAnalyzeLevel(level);
-        result.setAnalyzeMessage(buildMessage(level, log.getLogId(), log.getLogContent(), parsed.a, parsed.b));
+        result.setWarningRatio(toleranceRatio);
+        result.setAnalyzeMessage(buildMessage(level, log.getLogId(), log.getLogContent(), parsed.a, parsed.b, toleranceRatio));
         return result;
+    }
+
+    /**
+     * 기준(B) 대비 허용값(%) 이내 차이는 경고, 그 외 불일치는 에러로 판정한다.
+     * 허용값 미설정(0)이면 기존과 동일하게 불일치 시 바로 에러.
+     */
+    private String decideLevel(BigDecimal a, BigDecimal b, BigDecimal toleranceRatio) {
+        BigDecimal diff = a.subtract(b).abs();
+        if (diff.compareTo(BigDecimal.ZERO) == 0) {
+            return AnalyzeConstants.LEVEL_NORMAL;
+        }
+
+        if (toleranceRatio != null && toleranceRatio.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal allowedDiff = b.abs()
+                    .multiply(toleranceRatio)
+                    .divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP);
+            if (diff.compareTo(allowedDiff) <= 0) {
+                return AnalyzeConstants.LEVEL_WARNING;
+            }
+        }
+
+        return AnalyzeConstants.LEVEL_ERROR;
     }
 
     private AnalyzeResult baseResult(CollectLog log) {
@@ -55,13 +84,18 @@ public class CompareAnalyzer implements LogAnalyzer {
         return result;
     }
 
-    private String buildMessage(String level, String logId, String content, BigDecimal a, BigDecimal b) {
-        if (AnalyzeConstants.LEVEL_ERROR.equals(level)) {
-            return "[" + level + "][" + logId + "] " + content + " (A=" + a.stripTrailingZeros().toPlainString()
-                    + ", B=" + b.stripTrailingZeros().toPlainString() + ", 불일치)";
+    private String buildMessage(String level, String logId, String content, BigDecimal a, BigDecimal b, BigDecimal toleranceRatio) {
+        String aText = a.stripTrailingZeros().toPlainString();
+        String bText = b.stripTrailingZeros().toPlainString();
+
+        if (AnalyzeConstants.LEVEL_WARNING.equals(level)) {
+            return "[" + level + "][" + logId + "] " + content + " (A=" + aText + ", B=" + bText
+                    + ", 불일치하나 B 대비 허용값 " + toleranceRatio.stripTrailingZeros().toPlainString() + "% 이내 근접)";
         }
-        return "[" + level + "][" + logId + "] " + content + " (A=" + a.stripTrailingZeros().toPlainString()
-                + ", B=" + b.stripTrailingZeros().toPlainString() + ", 일치)";
+        if (AnalyzeConstants.LEVEL_ERROR.equals(level)) {
+            return "[" + level + "][" + logId + "] " + content + " (A=" + aText + ", B=" + bText + ", 불일치)";
+        }
+        return "[" + level + "][" + logId + "] " + content + " (A=" + aText + ", B=" + bText + ", 일치)";
     }
 
     private ParsedTwoNumbers parseTwoNumbers(String content) {

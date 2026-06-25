@@ -148,13 +148,30 @@ public class AnalyzePolicyParser {
     }
 
     private ComparePolicy parseComparePolicy(String serverId, String logId, List<String> tokens) {
-        if (tokens.size() != 3) {
+        if (tokens.size() != 3 && tokens.size() != 4) {
             return null;
+        }
+
+        BigDecimal toleranceRatio = BigDecimal.ZERO;
+        if (tokens.size() == 4) {
+            String toleranceText = tokens.get(3);
+            if (isBlank(toleranceText)) {
+                return null;
+            }
+            try {
+                toleranceRatio = new BigDecimal(toleranceText.trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+            if (toleranceRatio.compareTo(BigDecimal.ZERO) < 0) {
+                return null;
+            }
         }
 
         ComparePolicy policy = new ComparePolicy();
         policy.setServerId(serverId);
         policy.setLogId(logId);
+        policy.setToleranceRatio(toleranceRatio);
         return policy;
     }
 

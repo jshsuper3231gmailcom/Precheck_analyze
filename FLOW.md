@@ -276,7 +276,7 @@ analyze/
 |----------|---------|-----------|
 | `PhraseAnalyzer` | 문구 | `logContent`에 에러 키워드 포함 시 에러, 없으면 정상 |
 | `NumericAnalyzer` | 수치 | `logValue` (또는 `$값$` 파싱) vs threshold + operator. 경고 구간 = threshold ± warningRatio% |
-| `DateAnalyzer` | 날짜 | `logContent`에서 `yyyy/MM/dd` 추출, 오늘 날짜와 비교 |
+| `DateAnalyzer` | 날짜 | `logContent`의 `$...$` 토큰(`yyyy/MM/dd` 또는 `yyyy-MM-dd`) 추출, 오늘 날짜와 비교 |
 | `ExistenceAnalyzer` | 존재 | 로그 존재 자체가 에러 (파일/프로세스 부재를 의미) |
 | `InfoAnalyzer` | 정보 | 항상 정보 레벨 반환 (분석 없이 저장) |
 | `CompareAnalyzer` | 비교 | `logContent`/`rawLog`에서 `$A$$B$` 두 숫자 파싱 후 동일 여부 비교 |

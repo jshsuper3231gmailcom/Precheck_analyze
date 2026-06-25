@@ -29,7 +29,24 @@ class DateAnalyzerTest {
         CollectLog log = baseCollectLog();
         log.setLogType(AnalyzeConstants.LOG_TYPE_DATE);
         log.setLogId("DATE_BDAY");
-        log.setLogContent("bday[" + today + "]");
+        log.setLogContent("bday[$" + today + "$]");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_NORMAL, result.getAnalyzeLevel());
+    }
+
+    @Test
+    void today_withDashSeparator_isNormal() {
+        String today = LocalDate.now().format(FORMATTER).replace('/', '-');
+
+        DatePolicy policy = new DatePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("DATE_BDAY");
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_DATE);
+        log.setLogId("DATE_BDAY");
+        log.setLogContent("bday[$" + today + "$]");
 
         AnalyzeResult result = analyzer.analyze(log, policy);
         assertEquals(AnalyzeConstants.LEVEL_NORMAL, result.getAnalyzeLevel());
@@ -46,11 +63,31 @@ class DateAnalyzerTest {
         CollectLog log = baseCollectLog();
         log.setLogType(AnalyzeConstants.LOG_TYPE_DATE);
         log.setLogId("DATE_BDAY");
-        log.setLogContent("bday[" + other + "]");
+        log.setLogContent("bday[$" + other + "$]");
 
         AnalyzeResult result = analyzer.analyze(log, policy);
         assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
         assertTrue(result.getAnalyzeMessage().contains("날짜 불일치"));
+    }
+
+    @Test
+    void otherDate_withDashSeparator_isError_andShowsActualValue() {
+        String other = "2026-06-23";
+
+        DatePolicy policy = new DatePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("mbcosi_bday");
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_DATE);
+        log.setLogId("mbcosi_bday");
+        log.setLogContent("영업일 (bday) $" + other + "$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
+        assertTrue(result.getAnalyzeMessage().contains("실제=" + other),
+                () -> "실제 값이 누락되면 안됨(없음 X): " + result.getAnalyzeMessage());
+        assertFalse(result.getAnalyzeMessage().contains("실제=없음"));
     }
 
     private CollectLog baseCollectLog() {

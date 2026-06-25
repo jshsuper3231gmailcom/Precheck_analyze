@@ -7,6 +7,7 @@ import com.sks.precheck.analyze.common.constants.AnalyzeConstants;
 import com.sks.precheck.analyze.domain.AnalyzeResult;
 import com.sks.precheck.analyze.domain.CollectLog;
 import com.sks.precheck.analyze.domain.policy.ComparePolicy;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
@@ -67,6 +68,39 @@ class CompareAnalyzerTest {
         assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
         assertTrue(result.getAnalyzeMessage().contains("A=123"));
         assertTrue(result.getAnalyzeMessage().contains("B=120"));
+    }
+
+    @Test
+    void withinTolerance_isWarning() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_02");
+        policy.setToleranceRatio(new BigDecimal("5"));
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_02");
+        log.setLogContent("실시간정산 #2 수신$99$ 처리$100$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_WARNING, result.getAnalyzeLevel());
+        assertTrue(result.getAnalyzeMessage().contains("허용값 5% 이내"));
+    }
+
+    @Test
+    void exceedsTolerance_isError() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_02");
+        policy.setToleranceRatio(new BigDecimal("5"));
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_02");
+        log.setLogContent("실시간정산 #2 수신$90$ 처리$100$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
     }
 
     private CollectLog baseCollectLog() {

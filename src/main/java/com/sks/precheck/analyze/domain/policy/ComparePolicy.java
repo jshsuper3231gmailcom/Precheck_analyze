@@ -1,12 +1,14 @@
 package com.sks.precheck.analyze.domain.policy;
 
 import com.sks.precheck.analyze.common.constants.AnalyzeConstants;
+import java.math.BigDecimal;
 
 public class ComparePolicy implements AnalyzePolicy {
 
     private String serverId;
     private String logId;
     private final String logType = AnalyzeConstants.LOG_TYPE_COMPARE;
+    private BigDecimal toleranceRatio = BigDecimal.ZERO;
 
     @Override
     public String getServerId() {
@@ -29,6 +31,14 @@ public class ComparePolicy implements AnalyzePolicy {
     @Override
     public String getLogType() {
         return logType;
+    }
+
+    public BigDecimal getToleranceRatio() {
+        return toleranceRatio;
+    }
+
+    public void setToleranceRatio(BigDecimal toleranceRatio) {
+        this.toleranceRatio = toleranceRatio;
     }
 }
 

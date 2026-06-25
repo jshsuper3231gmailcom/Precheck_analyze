@@ -96,6 +96,24 @@ class AnalyzePolicyParserTest {
         assertEquals("dlprem01-테스트개발", comparePolicy.getServerId());
         assertEquals("JUCHE_DIFF_01", comparePolicy.getLogId());
         assertEquals(AnalyzeConstants.LOG_TYPE_COMPARE, comparePolicy.getLogType());
+        assertEquals(BigDecimal.ZERO, comparePolicy.getToleranceRatio());
+    }
+
+    @Test
+    void parse_compare_withToleranceRatio_ok() {
+        AnalyzePolicy policy = parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_02][비교][5]");
+        assertNotNull(policy);
+        assertInstanceOf(ComparePolicy.class, policy);
+
+        ComparePolicy comparePolicy = (ComparePolicy) policy;
+        assertEquals("JUCHE_DIFF_02", comparePolicy.getLogId());
+        assertEquals(new BigDecimal("5"), comparePolicy.getToleranceRatio());
+    }
+
+    @Test
+    void parse_compare_invalidToleranceRatio_returnsNull() {
+        assertNull(parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_02][비교][abc]"));
+        assertNull(parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_02][비교][-1]"));
     }
 
     @Test

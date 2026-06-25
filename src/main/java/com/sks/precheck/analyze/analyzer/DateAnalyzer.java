@@ -15,14 +15,15 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * 날짜형 로그 분석기 — 로그 내 yyyy/MM/dd 날짜가 오늘과 일치하면 LEVEL_NORMAL, 다르면 LEVEL_ERROR
+ * 날짜형 로그 분석기 — 로그 내 $yyyy/MM/dd$ 또는 $yyyy-MM-dd$ 값 토큰이 오늘과 일치하면 LEVEL_NORMAL, 다르면 LEVEL_ERROR
+ *
+ * 날짜 값은 수치형/시간형과 동일하게 $...$ 토큰으로 감싸여 있다(collect 단계에서 토큰 존재·날짜 유효성 검증 완료).
  */
 @Component
 public class DateAnalyzer implements LogAnalyzer {
 
     private static final DateTimeFormatter LOG_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-    // 수집 로그 타임스탬프 포맷(yyyy/MM/dd HH:mm:ss.SSS)과 동일한 슬래시 구분자 사용
-    private static final Pattern DATE_PATTERN = Pattern.compile("\\d{4}/\\d{2}/\\d{2}");
+    private static final Pattern VALUE_TOKEN_PATTERN = Pattern.compile("\\$([^$]+)\\$");
 
     @Override
     public AnalyzeResult analyze(CollectLog log, AnalyzePolicy policy) {
@@ -62,9 +63,12 @@ public class DateAnalyzer implements LogAnalyzer {
             return dates;
         }
 
-        Matcher matcher = DATE_PATTERN.matcher(content);
+        Matcher matcher = VALUE_TOKEN_PATTERN.matcher(content);
         while (matcher.find()) {
-            dates.add(matcher.group());
+            String value = matcher.group(1).trim();
+            if (!value.isEmpty()) {
+                dates.add(value);
+            }
         }
         return dates;
     }
@@ -74,11 +78,15 @@ public class DateAnalyzer implements LogAnalyzer {
             return "없음";
         }
         for (String date : dates) {
-            if (date != null && !date.equals(today)) {
+            if (date != null && !normalizeSeparator(date).equals(today)) {
                 return date;
             }
         }
         return null;
+    }
+
+    private String normalizeSeparator(String date) {
+        return date.replace('-', '/');
     }
 
     private String buildMessage(String level, String logId, String content, String today, String mismatched) {
