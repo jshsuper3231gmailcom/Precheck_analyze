@@ -9,4 +9,4 @@ spring:
 precheck:
   analyze:
     schedule-file-path: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
-    policy-file-path: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\analyze_sample\PreCheck_AnalyzePolicy_josung.conf
+    policy-file-path: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\analyze_sample\PreCheck_AnalyzePolicy.conf
