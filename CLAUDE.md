@@ -40,6 +40,6 @@ gradlew.bat test
 ## 스택 참고
 
 - Java 17, Spring Boot 3.5.14, MyBatis 3.0.5 (XML 매퍼), Spring Retry
-- PostgreSQL (test) / Altibase (prod)
+- PostgreSQL (test/prod)
 - `analyzeTaskExecutor` 스레드풀: core=5, max=20, queue=50
 - 재시도: `maxAttempts=4`, delay=300,000ms (5분)

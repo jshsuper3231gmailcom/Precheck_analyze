@@ -1,10 +1,11 @@
 spring:
   datasource:
-    driver-class-name: Altibase.jdbc.driver.AltibaseDriver
-    url: jdbc:Altibase://192.168.0.1:20300/precheck
+    driver-class-name: org.postgresql.Driver
+    # TODO: 실제 운영 PostgreSQL host:port/db, 계정으로 교체
+    url: jdbc:postgresql://prod-db-host:5432/precheck
     username: precheck
     password: precheck
 precheck:
   analyze:
-    schedule-file-path: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\schedule_sample\PreCheck_AnalyzeLogs_Schedule.conf
-    policy-file-path: C:\Users\20200161\Desktop\PreCheck_work\Precheck_project\Precheck_SKSCh1\precheck_collect\analyze\analyze_sample\PreCheck_AnalyzePolicy.conf
+    schedule-file-path: /home/precheck/cfg/PreCheck_AnalyzeLogs_Schedule.conf
+    policy-file-path: /home/precheck/cfg/PreCheck_AnalyzePolicy.conf
