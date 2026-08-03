@@ -150,6 +150,13 @@ public class AnalyzeRetryService {
             AnalyzeResult result;
             try {
                 result = analyzeOne(collectLog);
+            } catch (AnalyzeException e) {
+                // 정책타입불일치/필수값누락/포맷오류 등 데이터·설정 문제 - 배치 중단 없이 미분석 처리 후 계속 진행
+                log.warn("[스킵] 미분석 처리 - serverId: {}, serverIp: {}, collectLogId: {}, logId: {}, logType: {}, 사유: {}",
+                        serverId, collectLog.getServerIp(),
+                        collectLog.getCollectLogId(), collectLog.getLogId(),
+                        collectLog.getLogType(), e.getMessage());
+                result = buildUnanalyzedResult(collectLog, e.getMessage());
             } catch (Exception e) {
                 log.error("[예외] 분석 실패 - serverId: {}, serverIp: {}, collectLogId: {}, logId: {}, logType: {}, logContent: {}",
                         serverId, collectLog.getServerIp(),
@@ -290,6 +297,12 @@ public class AnalyzeRetryService {
         result.setLogValue(logRow.getLogValue());
         result.setAnalyzeLevel(AnalyzeConstants.LEVEL_UNANALYZED);
         result.setAnalyzeMessage("[미분석][" + logRow.getLogId() + "] 분석 정책 미등록");
+        return result;
+    }
+
+    private AnalyzeResult buildUnanalyzedResult(CollectLog logRow, String reason) {
+        AnalyzeResult result = buildUnanalyzedResult(logRow);
+        result.setAnalyzeMessage("[미분석][" + logRow.getLogId() + "] " + reason);
         return result;
     }
 }
