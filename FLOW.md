@@ -128,7 +128,7 @@ AnalyzeRetryService.analyzeOne(CollectLog)
           logType="날짜" → DateAnalyzer    → 로그 내 날짜 == 오늘 비교
           logType="존재" → ExistenceAnalyzer → 로그 존재 자체가 에러
           logType="정보" → InfoAnalyzer    → 항상 정보 레벨 반환
-          logType="비교" → CompareAnalyzer → $A$ == $B$ 두 수치 일치 여부
+          logType="비교" → CompareAnalyzer → 대칭모드: $A$ == $B$ 일치 여부(불일치 시 허용값% 이내면 경고) / 연산자모드: A op (B±허용오차%) 조건 충족이면 정상, 아니면 에러(경고 없음)
           logType="시간" → TimeAnalyzer    → HH:mm 시간 임계치 비교
 ```
 
@@ -186,7 +186,7 @@ analyze/
 | `analyzer/DateAnalyzer.java` | 날짜형 — 로그 내 날짜가 오늘인지 확인 |
 | `analyzer/ExistenceAnalyzer.java` | 존재형 — 로그 존재 자체가 에러 |
 | `analyzer/InfoAnalyzer.java` | 정보형 — 항상 정보 레벨 반환 |
-| `analyzer/CompareAnalyzer.java` | 비교형 — $A$ == $B$ 두 수치 동일 여부 |
+| `analyzer/CompareAnalyzer.java` | 비교형 — 대칭모드($A$==$B$ 동일 여부) 또는 연산자모드(A op (B±허용오차%), 정상/에러 2단계) |
 | `analyzer/TimeAnalyzer.java` | 시간형 — HH:mm 임계치 비교 |
 | `config/PolicyLoader.java` | 정책 파일 기동 시 1회 로딩, "serverId:logId" 키 O(1) 조회 |
 | `config/AsyncConfig.java` | analyzeTaskExecutor 스레드풀 (core5, max20, queue50) |
@@ -254,7 +254,7 @@ analyze/
 | `parseDatePolicy(...)` | `[날짜]` — 파라미터 없음 |
 | `parseExistencePolicy(...)` | `[존재]` — 파라미터 없음 |
 | `parseInfoPolicy(...)` | `[정보]` — 파라미터 없음 |
-| `parseComparePolicy(...)` | `[비교]` — 파라미터 없음 |
+| `parseComparePolicy(...)` | `[비교]` 또는 `[비교][허용값%]`(대칭모드) / `[비교][연산자][허용오차%]`(연산자모드, 토큰 5개일 때) |
 | `parseTimePolicy(...)` | `[시간][연산자][HH:mm]` 파싱 |
 | `extractBracketTokens(text)` | `[...]` 괄호 토큰 추출 (순서 보장) |
 
@@ -279,7 +279,7 @@ analyze/
 | `DateAnalyzer` | 날짜 | `logContent`의 `$...$` 토큰(`yyyy/MM/dd` 또는 `yyyy-MM-dd`) 추출, 오늘 날짜와 비교 |
 | `ExistenceAnalyzer` | 존재 | 로그 존재 자체가 에러 (파일/프로세스 부재를 의미) |
 | `InfoAnalyzer` | 정보 | 항상 정보 레벨 반환 (분석 없이 저장) |
-| `CompareAnalyzer` | 비교 | `logContent`/`rawLog`에서 `$A$$B$` 두 숫자 파싱 후 동일 여부 비교 |
+| `CompareAnalyzer` | 비교 | `logContent`/`rawLog`에서 `$A$$B$` 두 숫자 파싱 후, 정책에 연산자 없으면 동일 여부 비교(불일치 시 허용값%), 있으면 A op (B±허용오차%) 정상/에러 2단계 판정 |
 | `TimeAnalyzer` | 시간 | `$HH:mm$` 토큰 파싱 후 policy.operator와 thresholdTime 비교 |
 
 ### SequenceHelper

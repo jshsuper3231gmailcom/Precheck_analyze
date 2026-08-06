@@ -117,6 +117,27 @@ class AnalyzePolicyParserTest {
     }
 
     @Test
+    void parse_compare_withOperator_ok() {
+        AnalyzePolicy policy = parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_03][비교][>=][5]");
+        assertNotNull(policy);
+        assertInstanceOf(ComparePolicy.class, policy);
+
+        ComparePolicy comparePolicy = (ComparePolicy) policy;
+        assertEquals("dlprem01-테스트개발", comparePolicy.getServerId());
+        assertEquals("JUCHE_DIFF_03", comparePolicy.getLogId());
+        assertEquals(AnalyzeConstants.LOG_TYPE_COMPARE, comparePolicy.getLogType());
+        assertEquals(">=", comparePolicy.getOperator());
+        assertEquals(new BigDecimal("5"), comparePolicy.getToleranceRatio());
+    }
+
+    @Test
+    void parse_compare_withOperator_invalid_returnsNull() {
+        assertNull(parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_03][비교][==][5]"));
+        assertNull(parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_03][비교][>=][abc]"));
+        assertNull(parser.parse("[dlprem01-테스트개발][JUCHE_DIFF_03][비교][>=][-1]"));
+    }
+
+    @Test
     void parse_time_ok() {
         AnalyzePolicy policy = parser.parse("[dlprem01-테스트개발][DATE_BTIME][시간][<][08:00]");
         assertNotNull(policy);

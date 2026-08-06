@@ -40,12 +40,19 @@ public class CompareAnalyzer implements LogAnalyzer {
         }
 
         BigDecimal toleranceRatio = comparePolicy.getToleranceRatio();
-        String level = decideLevel(parsed.a, parsed.b, toleranceRatio);
+        String operator = comparePolicy.getOperator();
+        String level = operator != null
+                ? decideLevelByOperator(parsed.a, parsed.b, operator, toleranceRatio)
+                : decideLevel(parsed.a, parsed.b, toleranceRatio);
 
         AnalyzeResult result = baseResult(log);
         result.setAnalyzeLevel(level);
         result.setWarningRatio(toleranceRatio);
-        result.setAnalyzeMessage(buildMessage(level, log.getLogId(), log.getLogContent(), parsed.a, parsed.b, toleranceRatio));
+        if (operator != null) {
+            result.setThresholdValue(parsed.b);
+            result.setThresholdOperator(operator);
+        }
+        result.setAnalyzeMessage(buildMessage(level, log.getLogId(), log.getLogContent(), parsed.a, parsed.b, toleranceRatio, operator));
         return result;
     }
 
@@ -71,6 +78,32 @@ public class CompareAnalyzer implements LogAnalyzer {
         return AnalyzeConstants.LEVEL_ERROR;
     }
 
+    /**
+     * 연산자 기반 2단계(정상/에러) 판정 — B(로그의 두 번째 값)를 동적 임계치로 삼아
+     * A op (B ± 허용오차%) 조건 충족 여부만 본다. 경고 등급 없음(3절 6-4 참고).
+     * 허용오차 0이면 순수 A op B와 동일.
+     */
+    private String decideLevelByOperator(BigDecimal a, BigDecimal b, String operator, BigDecimal toleranceRatio) {
+        BigDecimal delta = b.abs()
+                .multiply(toleranceRatio)
+                .divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP);
+
+        boolean normal;
+        if (">=".equals(operator)) {
+            normal = a.compareTo(b.subtract(delta)) >= 0;
+        } else if (">".equals(operator)) {
+            normal = a.compareTo(b.subtract(delta)) > 0;
+        } else if ("<=".equals(operator)) {
+            normal = a.compareTo(b.add(delta)) <= 0;
+        } else if ("<".equals(operator)) {
+            normal = a.compareTo(b.add(delta)) < 0;
+        } else {
+            throw new AnalyzeException("지원하지 않는 비교형 연산자: " + operator);
+        }
+
+        return normal ? AnalyzeConstants.LEVEL_NORMAL : AnalyzeConstants.LEVEL_ERROR;
+    }
+
     private AnalyzeResult baseResult(CollectLog log) {
         AnalyzeResult result = new AnalyzeResult();
         result.setCollectLogId(log.getCollectLogId());
@@ -84,9 +117,19 @@ public class CompareAnalyzer implements LogAnalyzer {
         return result;
     }
 
-    private String buildMessage(String level, String logId, String content, BigDecimal a, BigDecimal b, BigDecimal toleranceRatio) {
+    private String buildMessage(String level, String logId, String content, BigDecimal a, BigDecimal b, BigDecimal toleranceRatio, String operator) {
         String aText = a.stripTrailingZeros().toPlainString();
         String bText = b.stripTrailingZeros().toPlainString();
+
+        if (operator != null) {
+            String ratioText = toleranceRatio.stripTrailingZeros().toPlainString();
+            if (AnalyzeConstants.LEVEL_ERROR.equals(level)) {
+                return "[" + level + "][" + logId + "] " + content + " (A=" + aText + ", B=" + bText
+                        + ", A " + operator + " B 조건 불충족 - 허용오차 " + ratioText + "% 반영)";
+            }
+            return "[" + level + "][" + logId + "] " + content + " (A=" + aText + ", B=" + bText
+                    + ", A " + operator + " B 조건 충족 - 허용오차 " + ratioText + "% 반영)";
+        }
 
         if (AnalyzeConstants.LEVEL_WARNING.equals(level)) {
             return "[" + level + "][" + logId + "] " + content + " (A=" + aText + ", B=" + bText

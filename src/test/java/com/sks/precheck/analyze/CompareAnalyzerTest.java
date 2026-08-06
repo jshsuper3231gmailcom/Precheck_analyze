@@ -103,6 +103,99 @@ class CompareAnalyzerTest {
         assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
     }
 
+    @Test
+    void operatorMode_atBoundary_isNormal() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_03");
+        policy.setOperator(">=");
+        policy.setToleranceRatio(new BigDecimal("5"));
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_03");
+        log.setLogContent("수신$95$ 처리$100$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_NORMAL, result.getAnalyzeLevel());
+        assertEquals(new BigDecimal("100"), result.getThresholdValue());
+        assertEquals(">=", result.getThresholdOperator());
+        assertTrue(result.getAnalyzeMessage().contains("조건 충족"));
+    }
+
+    @Test
+    void operatorMode_belowBoundary_isError() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_03");
+        policy.setOperator(">=");
+        policy.setToleranceRatio(new BigDecimal("5"));
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_03");
+        log.setLogContent("수신$94$ 처리$100$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
+        assertTrue(result.getAnalyzeMessage().contains("조건 불충족"));
+    }
+
+    @Test
+    void operatorMode_aboveTarget_isNormal_noUpperBound() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_03");
+        policy.setOperator(">=");
+        policy.setToleranceRatio(new BigDecimal("5"));
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_03");
+        log.setLogContent("수신$105$ 처리$100$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_NORMAL, result.getAnalyzeLevel());
+    }
+
+    @Test
+    void operatorMode_zeroTolerance_isBinaryAgainstB() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_03");
+        policy.setOperator(">=");
+        policy.setToleranceRatio(BigDecimal.ZERO);
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_03");
+        log.setLogContent("수신$99$ 처리$100$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_ERROR, result.getAnalyzeLevel());
+    }
+
+    @Test
+    void operatorMode_dynamicB_boundaryMovesWithB() {
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId("dlprem01-테스트개발");
+        policy.setLogId("JUCHE_DIFF_03");
+        policy.setOperator(">=");
+        policy.setToleranceRatio(new BigDecimal("5"));
+
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_COMPARE);
+        log.setLogId("JUCHE_DIFF_03");
+        log.setLogContent("수신$190$ 처리$200$");
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_NORMAL, result.getAnalyzeLevel());
+
+        log.setLogContent("수신$189$ 처리$200$");
+        AnalyzeResult errorResult = analyzer.analyze(log, policy);
+        assertEquals(AnalyzeConstants.LEVEL_ERROR, errorResult.getAnalyzeLevel());
+    }
+
     private CollectLog baseCollectLog() {
         CollectLog log = new CollectLog();
         log.setCollectLogId(1L);

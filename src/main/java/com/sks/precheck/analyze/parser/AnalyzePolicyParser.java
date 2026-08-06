@@ -148,6 +148,10 @@ public class AnalyzePolicyParser {
     }
 
     private ComparePolicy parseComparePolicy(String serverId, String logId, List<String> tokens) {
+        if (tokens.size() == 5) {
+            return parseComparePolicyWithOperator(serverId, logId, tokens);
+        }
+
         if (tokens.size() != 3 && tokens.size() != 4) {
             return null;
         }
@@ -171,6 +175,41 @@ public class AnalyzePolicyParser {
         ComparePolicy policy = new ComparePolicy();
         policy.setServerId(serverId);
         policy.setLogId(logId);
+        policy.setToleranceRatio(toleranceRatio);
+        return policy;
+    }
+
+    /**
+     * 연산자 기반 비교형 — [서버구분][LOG_ID][비교][연산자][허용오차%]
+     * 로그의 두 번째 값(B)을 동적 임계치로 삼아 A op (B±허용오차%) 형태로 정상/에러 2단계 판정한다(경고 없음).
+     */
+    private ComparePolicy parseComparePolicyWithOperator(String serverId, String logId, List<String> tokens) {
+        String operator = tokens.get(3);
+        String toleranceText = tokens.get(4);
+
+        if (isBlank(operator) || isBlank(toleranceText)) {
+            return null;
+        }
+
+        String op = operator.trim();
+        if (!(">".equals(op) || ">=".equals(op) || "<".equals(op) || "<=".equals(op))) {
+            return null;
+        }
+
+        BigDecimal toleranceRatio;
+        try {
+            toleranceRatio = new BigDecimal(toleranceText.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        if (toleranceRatio.compareTo(BigDecimal.ZERO) < 0) {
+            return null;
+        }
+
+        ComparePolicy policy = new ComparePolicy();
+        policy.setServerId(serverId);
+        policy.setLogId(logId);
+        policy.setOperator(op);
         policy.setToleranceRatio(toleranceRatio);
         return policy;
     }
