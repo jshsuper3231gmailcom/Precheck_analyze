@@ -53,6 +53,27 @@ class NumericAnalyzerTest {
         assertEquals(AnalyzeConstants.LEVEL_ERROR, analyzeLevel(gePolicy, "-1"));
     }
 
+    @Test
+    void emptyBracketInContent_filledWithLogValue_regardlessOfInnerWhitespace() {
+        NumericPolicy policy = numericPolicy(">", "0", "0");
+
+        assertTrue(analyzeMessage(policy, "12345", "수신[]").contains("수신[12345.00]"));
+        assertTrue(analyzeMessage(policy, "12345", "수신 [ ]").contains("수신 [12345.00]"));
+        assertTrue(analyzeMessage(policy, "12345", "수신 [  ]").contains("수신 [12345.00]"));
+    }
+
+    private String analyzeMessage(NumericPolicy policy, String logValueText, String content) {
+        CollectLog log = baseCollectLog();
+        log.setLogType(AnalyzeConstants.LOG_TYPE_NUMERIC);
+        log.setLogId("DISK_HOME");
+        log.setLogContent(content);
+        log.setLogValue(new BigDecimal(logValueText));
+
+        AnalyzeResult result = analyzer.analyze(log, policy);
+        assertNotNull(result);
+        return result.getAnalyzeMessage();
+    }
+
     private String analyzeLevel(NumericPolicy policy, String logValueText) {
         CollectLog log = baseCollectLog();
         log.setLogType(AnalyzeConstants.LOG_TYPE_NUMERIC);

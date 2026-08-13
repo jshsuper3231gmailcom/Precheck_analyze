@@ -35,3 +35,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# --- 로그 (실수로 tracked, 정리) ---
+logs/

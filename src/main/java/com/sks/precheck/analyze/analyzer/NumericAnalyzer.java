@@ -27,6 +27,7 @@ public class NumericAnalyzer implements LogAnalyzer {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final int CALC_SCALE = 6;
     private static final Pattern DOLLAR_PATTERN = Pattern.compile("\\$([^$]+)\\$");
+    private static final Pattern EMPTY_BRACKET_PATTERN = Pattern.compile("\\[\\s*]");
 
     @Override
     public AnalyzeResult analyze(CollectLog log, AnalyzePolicy policy) {
@@ -165,12 +166,22 @@ public class NumericAnalyzer implements LogAnalyzer {
     /**
      * 수집 단계에서 $값$ 토큰이 제거되어 로그 내용에 남은 빈 "[]"를
      * logValue(소수점 2자리)로 채워 보여준다.
+     *
+     * 원본 로그가 "수신[$12345$]"처럼 대괄호와 토큰 사이에 공백이 없으면 토큰 제거 후
+     * 정확히 "[]"가 남지만, "수신 [ $12345$ ]"처럼 공백이 있으면 removeTokensFromContent가
+     * 토큰만 지운 뒤 normalizeContent가 공백을 압축해도 "[ ]"(공백 1개)가 남아 "[]"와
+     * 매칭되지 않았다. 대괄호 사이 공백 유무와 무관하게 채워지도록 \s*로 허용한다.
      */
     private String fillEmptyBracket(String content, BigDecimal logValue) {
-        if (content == null || !content.contains("[]")) {
+        if (content == null) {
             return content;
         }
-        return content.replaceFirst("\\[]", "[" + logValue.setScale(2, RoundingMode.DOWN) + "]");
+        Matcher matcher = EMPTY_BRACKET_PATTERN.matcher(content);
+        if (!matcher.find()) {
+            return content;
+        }
+        String replacement = "[" + logValue.setScale(2, RoundingMode.DOWN) + "]";
+        return matcher.replaceFirst(Matcher.quoteReplacement(replacement));
     }
 
     private String oppositeOperator(String operator) {
